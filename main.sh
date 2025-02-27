@@ -57,10 +57,121 @@ extract_title() {
     echo "$title"
 }
 
+# Function to create a new app
+create_new_app() {
+    draw_box_top
+    draw_centered_text "Create a New Application"
+    draw_box_middle
+
+    # Check if the apps directory exists, create if not
+    if [ ! -d "$APPS_DIR" ]; then
+        mkdir -p "$APPS_DIR"
+        if [ $? -ne 0 ]; then
+            draw_left_text "Error: Failed to create apps directory."
+            draw_box_bottom
+            echo "Press Enter to continue..."
+            read -r
+            return 1
+        fi
+        draw_left_text "Created apps directory: $APPS_DIR"
+    fi
+
+    # Prompt for app name
+    local app_name=""
+    while [ -z "$app_name" ]; do
+        draw_left_text "Enter a name for your new app (letters, numbers, hyphens only):"
+        draw_box_middle
+        read -p "> " app_name
+
+        # Validate app name (allow only letters, numbers, and hyphens)
+        if ! [[ "$app_name" =~ ^[a-zA-Z0-9-]+$ ]]; then
+            draw_left_text "Error: Invalid app name. Use only letters, numbers, and hyphens."
+            app_name=""
+            continue
+        fi
+
+        # Check if app already exists
+        if [ -d "$APPS_DIR/$app_name" ]; then
+            draw_left_text "Error: An app with this name already exists."
+            app_name=""
+            continue
+        fi
+    done
+
+    # Create app directory
+    mkdir -p "$APPS_DIR/$app_name"
+    if [ $? -ne 0 ]; then
+        draw_left_text "Error: Failed to create app directory."
+        draw_box_bottom
+        echo "Press Enter to continue..."
+        read -r
+        return 1
+    fi
+
+    # Create a simple hello world script
+    cat > "$APPS_DIR/$app_name/$app_name.sh" << EOL
+#!/bin/bash
+# TITLE: $app_name App
+
+# Print a welcome message
+echo "Hello World from $app_name!"
+echo "This is a custom app created by $(whoami) on $(date)"
+echo ""
+echo "You can customize this script at:"
+echo "$APPS_DIR/$app_name/$app_name.sh"
+EOL
+
+    # Make the script executable
+    chmod +x "$APPS_DIR/$app_name/$app_name.sh"
+    if [ $? -ne 0 ]; then
+        draw_left_text "Warning: Could not make script executable."
+    fi
+
+    # Success message
+    draw_box_middle
+    draw_left_text "✅ App '$app_name' created successfully!"
+    draw_left_text "Location: $APPS_DIR/$app_name/$app_name.sh"
+    draw_left_text "You can now run your app from the main menu."
+    draw_box_bottom
+
+    echo "Press Enter to continue..."
+    read -r
+
+    # Refresh app list
+    refresh_app_list
+    return 0
+}
+
+# Function to refresh the app list
+refresh_app_list() {
+    # Clear existing app lists
+    APP_NAMES=()
+    APP_SCRIPTS=()
+    APP_TITLES=()
+
+    # Rescan for app scripts
+    for app_dir in "$APPS_DIR"/*; do
+        if [ -d "$app_dir" ]; then
+            app_name=$(basename "$app_dir")
+            script="$app_dir/$app_name.sh"
+            if [ -f "$script" ]; then
+                chmod +x "$script" 2>/dev/null
+                APP_NAMES+=("$app_name")
+                APP_SCRIPTS+=("$script")
+                APP_TITLES+=("$(extract_title "$script" "$app_name")")
+            fi
+        fi
+    done
+}
+
 # Check if the apps directory exists
 if [ ! -d "$APPS_DIR" ]; then
-    echo "Error: $APPS_DIR does not exist."
-    exit 1
+    mkdir -p "$APPS_DIR"
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to create $APPS_DIR."
+        exit 1
+    fi
+    echo "Created apps directory: $APPS_DIR"
 fi
 
 # Use arrays instead of associative arrays for compatibility
@@ -86,33 +197,47 @@ for app_dir in "$APPS_DIR"/*; do
     fi
 done
 
-if [ ${#APP_NAMES[@]} -eq 0 ]; then
-    echo "No app scripts found in $APPS_DIR."
-    exit 1
-fi
-
 show_menu() {
     draw_box_top
     draw_centered_text "Available Applications"
     draw_box_middle
+
+    # Show numbered apps
     for i in "${!APP_NAMES[@]}"; do
         draw_left_text "$(printf "%2d) %s" $((i + 1)) "${APP_TITLES[$i]}")"
     done
+
+    # Add create new app option
+    draw_box_middle
+    draw_left_text "W) Create a new app"
+    draw_left_text "Q) Quit"
+
     draw_box_bottom
-    echo "Enter the number of the app to run (or 'q' to quit):"
+    echo "Enter your choice (number, W to create a new app, or Q to quit):"
 }
 
 while true; do
     show_menu
     read -p "> " choice
+
+    # Handle quit option
     if [ "$choice" = "q" ] || [ "$choice" = "Q" ]; then
         echo "Exiting..."
         exit 0
     fi
-    if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-        echo "Error: Please enter a valid number or 'q'."
+
+    # Handle create new app option
+    if [ "$choice" = "w" ] || [ "$choice" = "W" ]; then
+        create_new_app
         continue
     fi
+
+    # Handle numbered options
+    if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+        echo "Error: Please enter a valid number, W, or Q."
+        continue
+    fi
+
     choice=$((choice - 1)) # Convert to 0-based index
     if [ "$choice" -lt 0 ] || [ "$choice" -ge "${#APP_NAMES[@]}" ]; then
         echo "Error: Choice out of range. Pick a number between 1 and ${#APP_NAMES[@]}."
